@@ -8,51 +8,54 @@
 
 #define CMD_PAIR (0x28)
 #define CMD_UNPAIR (0x45)
+
+#define CMD_TURN_ON (0x10)
+#define CMD_TURN_OFF (0x11)
+#define CMD_DIM (0x21)
+
+
 #define CMD_GENERIC_ONOFF (0x6f)
 #define CMD_DIRECTION (0x15)
 #define CMD_SPEED (0x31)
+#define CMD_FAN_MODE (0x33)
+#define CMD_VENTILATION (0x67)
+#define CMD_SWAY (0x16)
+#define CMD_SWING (0xb0)
 
 namespace esphome {
 // namespace fan {
 namespace fansmartpro {
 
-class FanSmartProFan : public fan::Fan, public Component, public EntityBase
+class FanSmartProFan : public fan::Fan, public Component
 #ifdef USE_API
   , public api::CustomAPIDevice
 #endif
 {
- public:
+public:
   void setup() override;
   void dump_config() override;
 
-//  void set_cold_white_temperature(float cold_white_temperature) { cold_white_temperature_ = cold_white_temperature; }
-//  void set_warm_white_temperature(float warm_white_temperature) { warm_white_temperature_ = warm_white_temperature; }
-//  void set_constant_brightness(bool constant_brightness) { constant_brightness_ = constant_brightness; }
-//  void set_reversed(bool reversed) { reversed_ = reversed; }
-//  void set_min_brightness(uint8_t min_brightness) { min_brightness_ = min_brightness; }
-//  void set_tx_duration(uint32_t tx_duration) { tx_duration_ = tx_duration; }
-//  void setup_state(fan::Fan *state) override { this->fan_state_ = state; }
-//  void write_state(fan::Fan *state) override;
-  void setup_state(fan::Fan *state) { this->fan_state_ = state; }
-  void write_state(fan::Fan *state);
-//  fan::FanTraits get_traits() override;
-  virtual void control(const fan::FanCall &call) {}
+  void write_state_();
+  virtual void control(const fan::FanCall &call);
   virtual fan::FanTraits get_traits();
+  void set_target(uint32_t target) { target_ = target; }
+
   void on_pair();
   void on_unpair();
 
 protected:
-  void send_packet(uint16_t cmd, uint8_t cold, uint8_t warm);
-
-//  float cold_white_temperature_{167};
-//  float warm_white_temperature_{333};
-//  bool constant_brightness_;
-//  bool reversed_;
-//  uint8_t min_brightness_;
-  bool _is_off;
+  void send_packet(uint16_t cmd, uint8_t param1, uint8_t param2, uint8_t param3 = 0, uint8_t param4 = 0);
   uint8_t tx_count_;
   uint32_t tx_duration_;
   fan::Fan *fan_state_;
+  fan::FanTraits traits_;
+
+  uint32_t target_{0};
+
+  bool old_state_{false};
+  int old_speed_{0};
+  esphome::fan::FanDirection old_direction_{esphome::fan::FanDirection::FORWARD};
+  bool old_oscillating_{false};
 };
 
 template<typename... Ts> class PairAction : public Action<Ts...> {

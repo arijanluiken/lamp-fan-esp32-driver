@@ -33,6 +33,8 @@ class LampSmartProLight : public light::LightOutput, public Component, public En
   void setup_state(light::LightState *state) override { this->light_state_ = state; }
   void write_state(light::LightState *state) override;
   light::LightTraits get_traits() override;
+  void set_target(uint32_t target) { target_ = target; }
+
   void on_pair();
   void on_unpair();
 
@@ -48,6 +50,7 @@ class LampSmartProLight : public light::LightOutput, public Component, public En
   uint8_t tx_count_;
   uint32_t tx_duration_;
   light::LightState *light_state_;
+  uint32_t target_{0};
 };
 
 template<typename... Ts> class PairAction : public Action<Ts...> {

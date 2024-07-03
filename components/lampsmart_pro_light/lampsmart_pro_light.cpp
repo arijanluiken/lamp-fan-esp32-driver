@@ -1,7 +1,7 @@
 #include "lampsmart_pro_light.h"
 #include "esphome/core/log.h"
 
-#ifdef USE_ESP32
+// #ifdef USE_ESP32
 
 #include <esp_gap_ble_api.h>
 #include <esp_gatts_api.h>
@@ -177,13 +177,14 @@ void sign_packet_v3(adv_data_t* packet) {
 }
 
 void LampSmartProLight::send_packet(uint16_t cmd, uint8_t cold, uint8_t warm) {
+  ESP_LOGD(TAG, "LampSmartProLight::send_packet called! %u", target_ ? target_ : light_state_->get_object_id_hash());
   uint16_t seed = (uint16_t) rand();
 
   adv_data_t packet = {{
       .prefix = {0x02, 0x01, 0x02, 0x1B, 0x16, 0xF0, 0x08, 0x10, 0x80, 0x00},
       .packet_number = ++(this->tx_count_),
       .type = 0x100,
-      .identifier = light_state_ ? light_state_->get_object_id_hash() : 0xcafebabe,
+      .identifier = target_ ? target_ : light_state_->get_object_id_hash(),
       .var2 = 0x0,
       .command = cmd,
       ._20 = 0,
@@ -200,6 +201,7 @@ void LampSmartProLight::send_packet(uint16_t cmd, uint8_t cold, uint8_t warm) {
   
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_ble_gap_config_adv_data_raw(packet.raw, sizeof(packet)));
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_ble_gap_start_advertising(&ADVERTISING_PARAMS));
+  ESP_LOGD(TAG, "LampSmartProLight::send_packet called! Delay: %d", tx_duration_);
   delay(tx_duration_);
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_ble_gap_stop_advertising());
 }
@@ -207,4 +209,4 @@ void LampSmartProLight::send_packet(uint16_t cmd, uint8_t cold, uint8_t warm) {
 } // namespace lampsmartpro
 } // namespace esphome
 
-#endif
+// #endif

@@ -1,7 +1,7 @@
 #include "fansmart_pro_fan.h"
 #include "esphome/core/log.h"
 
-#ifdef USE_ESP32
+// #ifdef USE_ESP32
 
 #include <esp_gap_ble_api.h>
 #include <esp_gatts_api.h>
@@ -22,7 +22,8 @@ typedef union {
     uint32_t identifier;
     uint8_t var2;
     uint16_t command;
-    uint16_t _20;
+    uint8_t _20;
+    uint8_t _21;
     uint8_t channel1;
     uint8_t channel2;
     uint16_t signature_v3;
@@ -89,61 +90,76 @@ uint16_t v2_crc16_ccitt(uint8_t *src, uint8_t size, uint16_t crc16_result) {
 }
 
 void FanSmartProFan::setup() {
+    ESP_LOGD(TAG, "FanSmartProFan::setup called!");
+    tx_duration_ = 1000;
 #ifdef USE_API
-  register_service(&FanSmartProFan::on_pair, fan_state_ ? "pair_" + fan_state_->get_object_id() : "pair");
-  register_service(&FanSmartProFan::on_unpair, fan_state_ ? "unpair_" + fan_state_->get_object_id() : "unpair");
+  if (!target_) {
+    register_service(&FanSmartProFan::on_pair, "pair_" + this->get_object_id_hash());
+    register_service(&FanSmartProFan::on_unpair, "unpair_" + this->get_object_id_hash());
+  }
 #endif
+
+  set_restore_mode(fan::FanRestoreMode::RESTORE_DEFAULT_OFF);
+
+  traits_.set_direction(true);
+  traits_.set_speed(true);
+  traits_.set_supported_speed_count(6);
+  traits_.set_oscillation(true);
 }
 
 fan::FanTraits FanSmartProFan::get_traits() {
-  auto traits = fan::FanTraits();
-//  traits.set_supported_color_modes({fan::ColorMode::COLD_WARM_WHITE});
-//  traits.set_min_mireds(this->cold_white_temperature_);
-//  traits.set_max_mireds(this->warm_white_temperature_);
-  return traits;
+  ESP_LOGD(TAG, "FanSmartProFan::get_traits called!");
+  return this->traits_;
 }
 
-void FanSmartProFan::write_state(fan::Fan *state) {
-//  float cwf, wwf;
-//  state->current_values_as_cwww(&cwf, &wwf, this->constant_brightness_);
+void FanSmartProFan::control(const fan::FanCall &call) {
+  ESP_LOGD(TAG, "FanSmartProFan::control called!");
 
-//  if (!cwf && !wwf) {
-//    send_packet(CMD_TURN_OFF, 0, 0);
-//    _is_off = true;
+  if (call.get_state().has_value())
+    this->state = *call.get_state();
+  if (call.get_speed().has_value())
+    this->speed = *call.get_speed();
+  if (call.get_oscillating().has_value())
+    this->oscillating = *call.get_oscillating();
+  if (call.get_direction().has_value())
+    this->direction = *call.get_direction();
+  this->preset_mode = call.get_preset_mode();
 
-//    return;
-//  }
+  this->write_state_();
+  this->publish_state();
+}
 
-//  uint8_t cwi = (uint8_t)(0xff * cwf);
-//  uint8_t wwi = (uint8_t)(0xff * wwf);
+void FanSmartProFan::write_state_() {
+  ESP_LOGD(TAG, "FanSmartProFan::write_state called!");
 
-//  if ((cwi < min_brightness_) && (wwi < min_brightness_)) {
-//    if (cwf > 0.000001) {
-//      cwi = min_brightness_;
-//    }
-
-//    if (wwf > 0.000001) {
-//      wwi = min_brightness_;
-//    }
-//  }
-
-//  ESP_LOGD(TAG, "FanSmartProFan::write_state called! Requested cw: %d, ww: %d", cwi, wwi);
-
-  if (_is_off) {
-    send_packet(CMD_GENERIC_ONOFF, 0, 0);
-    _is_off = false;
+  if ((!state && state != old_state_) || (speed == 0 && speed != old_speed_)) {
+    send_packet(CMD_SPEED, 0, 0, 32);
+    return;
   }
 
-//  send_packet(CMD_DIM, cwi, wwi);
+  if (speed != old_speed_) {
+    send_packet(CMD_SPEED, speed, 0, 32);
+  }
+
+  if (old_direction_ != direction) {
+    send_packet(CMD_DIRECTION, 0, 0, (uint8_t)direction);
+  }
+
+  if (old_oscillating_ != oscillating) {
+    send_packet(CMD_SWAY, 0, 0, (uint8_t)oscillating);
+  }
+
+  old_state_ = state;
+  old_speed_ = speed;
+  old_direction_ = direction;
+  old_oscillating_ = oscillating;
 }
 
 void FanSmartProFan::dump_config() {
-//  ESP_LOGCONFIG(TAG, "FanSmartProFan '%s'", fan_state_ ? fan_state_->get_name().c_str() : "");
-//  ESP_LOGCONFIG(TAG, "  Cold White Temperature: %f mireds", cold_white_temperature_);
-//  ESP_LOGCONFIG(TAG, "  Warm White Temperature: %f mireds", warm_white_temperature_);
-//  ESP_LOGCONFIG(TAG, "  Constant Brightness: %s", constant_brightness_ ? "true" : "false");
-//  ESP_LOGCONFIG(TAG, "  Minimum Brightness: %d", min_brightness_);
-//  ESP_LOGCONFIG(TAG, "  Transmission Duratoin: %d millis", tx_duration_);
+  ESP_LOGD(TAG, "FanSmartProFan::dump_config called!");
+
+  // TODO
+//  ESP_LOGCONFIG(TAG, "FanSmartProFan '%s'", get_name().c_str());
 }
 
 void FanSmartProFan::on_pair() {
@@ -177,19 +193,21 @@ void sign_packet_v3(adv_data_t* packet) {
   }
 }
 
-void FanSmartProFan::send_packet(uint16_t cmd, uint8_t cold, uint8_t warm) {
+void FanSmartProFan::send_packet(uint16_t cmd, uint8_t param1, uint8_t param2, uint8_t param3, uint8_t param4) {
+  ESP_LOGD(TAG, "FanSmartProFan::send_packet called! ID: %u", target_ ? target_ : this->get_object_id_hash());
   uint16_t seed = (uint16_t) rand();
 
   adv_data_t packet = {{
       .prefix = {0x02, 0x01, 0x02, 0x1B, 0x16, 0xF0, 0x08, 0x10, 0x80, 0x00},
       .packet_number = ++(this->tx_count_),
       .type = 0x100,
-      .identifier = fan_state_ ? fan_state_->get_object_id_hash() : 0xcafebabe,
-      .var2 = 0x0,
+      .identifier = target_ ? target_ : this->get_object_id_hash(),
+      .var2 = 0,
       .command = cmd,
       ._20 = 0,
-//      .channel1 = reversed_ ? warm : cold,
-//      .channel2 = reversed_ ? cold : warm,
+      ._21 = param3,
+      .channel1 = param1,
+      .channel2 = param2,
       .signature_v3 = 0,
       ._26 = 0,
       .rand = seed,
@@ -198,6 +216,8 @@ void FanSmartProFan::send_packet(uint16_t cmd, uint8_t cold, uint8_t warm) {
   sign_packet_v3(&packet);
   ble_whiten(&packet.raw[9], 0x12, (uint8_t) seed, 0);
   packet.crc16 = v2_crc16_ccitt(&packet.raw[7], 0x16, ~seed);
+
+  ESP_LOGD(TAG, "Prepared packet: %s", esphome::format_hex_pretty(packet.raw, sizeof(packet)).c_str());  
 
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_ble_gap_config_adv_data_raw(packet.raw, sizeof(packet)));
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_ble_gap_start_advertising(&ADVERTISING_PARAMS));
@@ -209,4 +229,4 @@ void FanSmartProFan::send_packet(uint16_t cmd, uint8_t cold, uint8_t warm) {
 // } // namespace fan
 } // namespace esphome
 
-#endif
+// #endif
