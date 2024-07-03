@@ -132,12 +132,16 @@ void FanSmartProFan::control(const fan::FanCall &call) {
 void FanSmartProFan::write_state_() {
   ESP_LOGD(TAG, "FanSmartProFan::write_state called!");
 
+  // Toggle off
   if ((!state && state != old_state_) || (speed == 0 && speed != old_speed_)) {
     send_packet(CMD_SPEED, 0, 0, 32);
-    return;
-  }
 
-  if (speed != old_speed_) {
+    old_state_ = state;
+    return;
+  } 
+  
+  // Toggle on
+  if (speed != old_speed_ || (state && !old_state_)) {  // Either on changed speed or state changed from off to on
     send_packet(CMD_SPEED, speed, 0, 32);
   }
 
